@@ -21,12 +21,10 @@
     MCP_PORT               - 远程 MCP 服务监听端口
 """
 
-import asyncio
 import logging
 import socket
 import sys
 import threading
-from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -364,13 +362,7 @@ def _run_sse_mcp_server(config: dict):
         service_info["remote_runtime"] = {"transport_backend": "fastmcp_sse"}
         return JSONResponse(service_info)
 
-    @asynccontextmanager
-    async def lifespan(_starlette_app):
-        async with app.session_manager.run():
-            yield
-
     mcp_http_app = Starlette(
-        lifespan=lifespan,
         routes=[
             Route("/runtime", endpoint=remote_runtime),
             Mount(mount_path, app=app.sse_app(mount_path)),
