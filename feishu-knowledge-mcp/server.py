@@ -22,6 +22,7 @@
 """
 
 import asyncio
+from contextlib import asynccontextmanager
 import logging
 import socket
 import sys
@@ -417,6 +418,11 @@ def _run_streamable_http_mcp_server(config: dict):
     http_path = _normalize_http_path(mcp_config.get("http_path") or "/mcp")
     mounted_http_path = f"{http_path.rstrip('/')}/"
 
+    # Mount the Streamable HTTP app at /mcp while exposing its endpoint at the
+    # mount root instead of the default nested /mcp/mcp path.
+    app.settings.streamable_http_path = "/"
+    streamable_http_asgi = app.streamable_http_app()
+
     async def remote_runtime(request: Request):
         service_info = _build_service_info(config)
         service_info["remote_runtime"] = {"transport_backend": "fastmcp_streamable_http"}
@@ -425,11 +431,17 @@ def _run_streamable_http_mcp_server(config: dict):
     async def redirect_http_root(request: Request):
         return RedirectResponse(url=mounted_http_path, status_code=307)
 
+    @asynccontextmanager
+    async def lifespan(_starlette_app):
+        async with app.session_manager.run():
+            yield
+
     mcp_http_app = Starlette(
+        lifespan=lifespan,
         routes=[
             Route("/runtime", endpoint=remote_runtime),
             Route(http_path, endpoint=redirect_http_root),
-            Mount(mounted_http_path, app=app.streamable_http_app()),
+            Mount(mounted_http_path, app=streamable_http_asgi),
         ]
     )
 
