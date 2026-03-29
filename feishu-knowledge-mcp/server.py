@@ -467,9 +467,14 @@ def main():
         from dashboard.logger import DashboardLogger
         from dashboard.registry import SkillRegistryStore
 
-        init_logger = DashboardLogger(dashboard_database_url)
-        asyncio.run(init_logger.init_db())
-        asyncio.run(init_logger.dispose())
+        async def _init_dashboard_runtime():
+            init_logger = DashboardLogger(dashboard_database_url)
+            try:
+                await init_logger.init_db()
+            finally:
+                await init_logger.dispose()
+
+        asyncio.run(_init_dashboard_runtime())
 
         dashboard_logger = DashboardLogger(dashboard_database_url)
         registry_store = SkillRegistryStore(dashboard_logger)
