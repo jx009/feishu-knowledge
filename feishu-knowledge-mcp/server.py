@@ -88,6 +88,7 @@ def _build_service_info(config: dict) -> dict:
     mcp_transport = str(mcp_config.get("transport") or "stdio").strip().lower()
     mcp_host = str(mcp_config.get("host") or "0.0.0.0")
     mcp_port = int(mcp_config.get("port") or 8001)
+    mcp_http_path = _normalize_http_path(mcp_config.get("http_path") or "/mcp")
     mcp_sse_path = _normalize_http_path(mcp_config.get("sse_path") or "/mcp/sse")
     mcp_message_path = _normalize_http_path(mcp_config.get("message_path") or "/mcp/messages", trailing_slash=True)
     public_base_url = str(mcp_config.get("public_base_url") or "").strip().rstrip("/")
@@ -123,7 +124,17 @@ def _build_service_info(config: dict) -> dict:
         },
     }
 
-    if mcp_transport == "sse":
+    if mcp_transport == "streamable_http":
+        service_info["mcp"].update(
+            {
+                "enabled": True,
+                "http_path": mcp_http_path,
+                "base_url": mcp_base_url,
+                "url": f"{mcp_base_url}{mcp_http_path}",
+                "protocol": "streamable_http",
+            }
+        )
+    elif mcp_transport == "sse":
         service_info["mcp"].update(
             {
                 "enabled": True,
@@ -392,8 +403,50 @@ def _run_sse_mcp_server(config: dict):
         logger.info("MCP SSE 服务已停止")
 
 
+def _run_streamable_http_mcp_server(config: dict):
+    import uvicorn
+    from starlette.applications import Starlette
+    from starlette.requests import Request
+    from starlette.responses import JSONResponse
+    from starlette.routing import Mount, Route
+
+    mcp_config = config.get("mcp", {}) or {}
+    host = str(mcp_config.get("host") or "0.0.0.0")
+    port = int(mcp_config.get("port") or 8001)
+    http_path = _normalize_http_path(mcp_config.get("http_path") or "/mcp")
+
+    async def remote_runtime(request: Request):
+        service_info = _build_service_info(config)
+        service_info["remote_runtime"] = {"transport_backend": "fastmcp_streamable_http"}
+        return JSONResponse(service_info)
+
+    mcp_http_app = Starlette(
+        routes=[
+            Route("/runtime", endpoint=remote_runtime),
+            Mount(http_path, app=app.streamable_http_app()),
+        ]
+    )
+
+    service_info = _build_service_info(config)
+    logger.info("🚀 MCP Server 已就绪（Streamable HTTP 模式），等待远程客户端连接...")
+    logger.info("✅ 远程 MCP 接入地址: %s", service_info["mcp"]["url"])
+
+    try:
+        uvicorn.run(
+            mcp_http_app,
+            host=host,
+            port=port,
+            log_level="warning",
+        )
+    except KeyboardInterrupt:
+        logger.info("MCP Streamable HTTP 服务已停止")
+
+
 def _run_mcp_server(config: dict):
     mcp_transport = str(config.get("mcp", {}).get("transport") or "stdio").strip().lower()
+    if mcp_transport == "streamable_http":
+        _run_streamable_http_mcp_server(config)
+        return
     if mcp_transport == "sse":
         _run_sse_mcp_server(config)
         return

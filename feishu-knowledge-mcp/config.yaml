@@ -85,9 +85,10 @@ dashboard:
 
 # MCP 服务接入配置
 mcp:
-  transport: "stdio"                        # stdio / sse；本地调试建议 stdio，服务器共享建议 sse
+  transport: "stdio"                        # stdio / sse / streamable_http；Codex CLI 远程接入建议 streamable_http
   host: "0.0.0.0"                           # 远程 MCP 服务监听地址
   port: 8001                                 # 远程 MCP 服务监听端口
+  http_path: "/mcp"                         # Streamable HTTP 接入入口（Codex CLI 推荐）
   sse_path: "/mcp/sse"                      # SSE 握手入口
   message_path: "/mcp/messages"             # MCP 消息收发入口
   public_base_url: ""                       # 对外访问基地址；如需给客户端展示外网地址可填写

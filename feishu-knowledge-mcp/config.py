@@ -130,6 +130,7 @@ def _build_base_config() -> dict:
             "transport": "stdio",
             "host": "0.0.0.0",
             "port": 8001,
+            "http_path": "/mcp",
             "sse_path": "/mcp/sse",
             "message_path": "/mcp/messages",
             "public_base_url": "",
@@ -273,6 +274,7 @@ def _apply_defaults(config: dict):
     mcp_config.setdefault("transport", "stdio")
     mcp_config.setdefault("host", "0.0.0.0")
     mcp_config.setdefault("port", 8001)
+    mcp_config.setdefault("http_path", "/mcp")
     mcp_config.setdefault("sse_path", "/mcp/sse")
     mcp_config.setdefault("message_path", "/mcp/messages")
     mcp_config.setdefault("public_base_url", "")
@@ -337,6 +339,7 @@ def _override_from_env(config: dict):
         MCP_TRANSPORT                → mcp.transport
         MCP_HOST                     → mcp.host
         MCP_PORT                     → mcp.port
+        MCP_HTTP_PATH                → mcp.http_path
         MCP_SSE_PATH                 → mcp.sse_path
         MCP_MESSAGE_PATH             → mcp.message_path
         MCP_PUBLIC_BASE_URL          → mcp.public_base_url
@@ -402,6 +405,7 @@ def _override_from_env(config: dict):
         "MCP_TRANSPORT": (["mcp", "transport"], str),
         "MCP_HOST": (["mcp", "host"], str),
         "MCP_PORT": (["mcp", "port"], int),
+        "MCP_HTTP_PATH": (["mcp", "http_path"], str),
         "MCP_SSE_PATH": (["mcp", "sse_path"], str),
         "MCP_MESSAGE_PATH": (["mcp", "message_path"], str),
         "MCP_PUBLIC_BASE_URL": (["mcp", "public_base_url"], str),
@@ -566,8 +570,8 @@ def _validate(config: dict):
 
     mcp_config = config.get("mcp", {})
     transport = str(mcp_config.get("transport") or "stdio").strip().lower()
-    if transport not in {"stdio", "sse"}:
-        errors.append("mcp.transport 仅支持 stdio 或 sse。")
+    if transport not in {"stdio", "sse", "streamable_http"}:
+        errors.append("mcp.transport 仅支持 stdio、sse 或 streamable_http。")
 
     if not str(mcp_config.get("host") or "").strip():
         errors.append("mcp.host 未配置。请填写远程 MCP 服务监听地址，例如 0.0.0.0。")
@@ -579,7 +583,11 @@ def _validate(config: dict):
     except (TypeError, ValueError):
         errors.append("mcp.port 必须是 1 到 65535 之间的整数。")
 
-    for key, field_name in (("sse_path", "mcp.sse_path"), ("message_path", "mcp.message_path")):
+    for key, field_name in (
+        ("http_path", "mcp.http_path"),
+        ("sse_path", "mcp.sse_path"),
+        ("message_path", "mcp.message_path"),
+    ):
         path_value = str(mcp_config.get(key) or "").strip()
         if not path_value:
             errors.append(f"{field_name} 未配置。")
