@@ -7,16 +7,12 @@
 #   docker-compose down         # 停止
 #   docker-compose logs qdrant  # 查看日志
 #
-# Qdrant Dashboard：http://localhost:6333/dashboard
-# MCP Dashboard：http://localhost:8080（需启动 MCP Server）
-
-version: '3.8'
+# Qdrant Dashboard：http://localhost:7003/dashboard
+# MCP Dashboard：http://localhost:7000（需启动 MCP Server）
 
 services:
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ${APP_IMAGE:-feishu-knowledge-mcp:latest}
     container_name: feishu-knowledge-mcp
     command: python server.py
     env_file:
@@ -38,10 +34,10 @@ services:
       postgres:
         condition: service_healthy
       qdrant:
-        condition: service_healthy
+        condition: service_started
     ports:
-      - "8080:8080"
-      - "8001:8001"
+      - "7000:8080"
+      - "7001:8001"
     volumes:
       - ./runtime:/app/runtime
     restart: unless-stopped
@@ -60,7 +56,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
-      - "5432:5432"
+      - "7002:5432"
     volumes:
       - ./postgres_data:/var/lib/postgresql/data
     restart: always
@@ -74,15 +70,10 @@ services:
     image: qdrant/qdrant:latest
     container_name: feishu-knowledge-qdrant
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      - "7003:6333"
+      - "7004:6334"
     volumes:
       - ./qdrant_storage:/qdrant/storage
     environment:
       QDRANT__SERVICE__GRPC_PORT: 6334
     restart: always
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:6333/healthz"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
