@@ -125,12 +125,13 @@ def _build_service_info(config: dict) -> dict:
     }
 
     if mcp_transport == "streamable_http":
+        http_url = f"{mcp_base_url}{mcp_http_path.rstrip('/')}/"
         service_info["mcp"].update(
             {
                 "enabled": True,
                 "http_path": mcp_http_path,
                 "base_url": mcp_base_url,
-                "url": f"{mcp_base_url}{mcp_http_path}",
+                "url": http_url,
                 "protocol": "streamable_http",
             }
         )
@@ -407,23 +408,28 @@ def _run_streamable_http_mcp_server(config: dict):
     import uvicorn
     from starlette.applications import Starlette
     from starlette.requests import Request
-    from starlette.responses import JSONResponse
+    from starlette.responses import JSONResponse, RedirectResponse
     from starlette.routing import Mount, Route
 
     mcp_config = config.get("mcp", {}) or {}
     host = str(mcp_config.get("host") or "0.0.0.0")
     port = int(mcp_config.get("port") or 8001)
     http_path = _normalize_http_path(mcp_config.get("http_path") or "/mcp")
+    mounted_http_path = f"{http_path.rstrip('/')}/"
 
     async def remote_runtime(request: Request):
         service_info = _build_service_info(config)
         service_info["remote_runtime"] = {"transport_backend": "fastmcp_streamable_http"}
         return JSONResponse(service_info)
 
+    async def redirect_http_root(request: Request):
+        return RedirectResponse(url=mounted_http_path, status_code=307)
+
     mcp_http_app = Starlette(
         routes=[
             Route("/runtime", endpoint=remote_runtime),
-            Mount(http_path, app=app.streamable_http_app()),
+            Route(http_path, endpoint=redirect_http_root),
+            Mount(mounted_http_path, app=app.streamable_http_app()),
         ]
     )
 
