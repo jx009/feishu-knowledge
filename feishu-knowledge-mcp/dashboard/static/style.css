@@ -1,0 +1,68 @@
+/* Knowledge MCP Dashboard - 自定义样式 */
+
+/* 全局过渡动画 */
+* {
+    transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+}
+
+/* 卡片悬浮效果 */
+.bg-white.rounded-lg:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+/* 操作记录行悬浮高亮 */
+.border-b.hover\:bg-gray-50:hover {
+    background-color: #f9fafb;
+}
+
+/* 按钮焦点样式 */
+button:focus {
+    outline: 2px solid #3b82f6;
+    outline-offset: 2px;
+}
+
+/* 选择框和输入框焦点 */
+select:focus, input:focus {
+    outline: 2px solid #3b82f6;
+    outline-offset: -1px;
+    border-color: #3b82f6;
+}
+
+/* 分页按钮 */
+button:disabled {
+    cursor: not-allowed;
+}
+
+/* 截断文本 */
+.truncate {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 600px;
+}
+
+/* 热门知识卡片 */
+.hot-skill-card {
+    background: linear-gradient(180deg, #ffffff 0%, #fafcff 100%);
+}
+
+.hot-skill-rank {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2rem;
+    height: 2rem;
+    padding: 0 0.5rem;
+    border-radius: 9999px;
+    background: #eff6ff;
+    color: #2563eb;
+    font-size: 0.875rem;
+    font-weight: 700;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+    .grid-cols-4 {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}

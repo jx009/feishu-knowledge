@@ -1,0 +1,102 @@
+# ============================================
+# 飞书知识库 MCP Server 配置文件
+# ============================================
+
+# 运行时配置
+runtime:
+  environment: "development"                 # development / production
+  data_dir: "~/.feishu-knowledge"            # 统一数据目录，日志与本地 SQLite 等相对路径会挂到这里
+
+# 飞书应用配置
+feishu:
+  app_id: "your_feishu_app_id"               # 飞书自建应用 App ID
+  app_secret: "your_feishu_app_secret"        # 飞书自建应用 App Secret
+  wiki_space_id: "your_wiki_space_id"         # 飞书知识空间 ID
+
+  retry:
+    max_attempts: 3                            # 飞书 API 最大重试次数
+    initial_delay_seconds: 1.0                # 首次重试等待秒数
+    backoff_multiplier: 2.0                   # 指数退避倍数
+  # 分类目录与飞书节点的映射（创建知识空间后填写各分类文件夹的 node_token）
+  category_nodes:
+    架构方案: "node_id_1"
+    产品迭代: "node_id_2"
+    优化沉淀: "node_id_3"
+    避坑记录: "node_id_4"
+    最佳实践: "node_id_5"
+    工具使用: "node_id_6"
+    业务知识: "node_id_7"
+
+# 向量数据库配置
+vector:
+  provider: "qdrant_self_hosted"              # 自建 Qdrant Docker 部署
+  retry:
+    max_attempts: 3                            # 向量写入/删除最大重试次数
+    initial_delay_seconds: 0.5                # 首次重试等待秒数
+    backoff_multiplier: 2.0                   # 指数退避倍数
+  qdrant:
+    url: "http://localhost:6333"              # Qdrant 地址（同机部署用 localhost）
+    api_key: ""                                # 自建可不设密码
+    collection_name: "knowledge_skills"
+
+# ============================================
+# OpenAI Embedding 配置（重要！请务必填写）
+# ============================================
+embedding:
+  api_key: "your_openai_api_key"             # OpenAI API Key（支持环境变量 OPENAI_API_KEY 覆盖）
+  api_base: "https://api.openai.com/v1"      # API 地址（可替换为代理地址，支持环境变量 OPENAI_API_BASE 覆盖）
+  model: "text-embedding-3-small"             # 模型名称
+  dimensions: 1536                            # 向量维度
+  retry:
+    max_attempts: 3                           # Embedding 最大重试次数
+    initial_delay_seconds: 1.0               # 首次重试等待秒数
+    backoff_multiplier: 2.0                  # 指数退避倍数
+
+# 知识卡片配置
+knowledge:
+  default_category: "最佳实践"
+  chunk_size: 500                            # 文档切片大小
+  chunk_overlap: 50                          # 切片重叠字符数
+  search_top_k: 5                            # 默认检索返回条数
+
+# 同步与补偿配置
+sync:
+  mode: "repair_and_drift_detection"         # repair_only / repair_and_drift_detection
+  cleanup_orphan_vectors: true               # 是否清理注册表外的孤儿向量点
+  max_records_per_run: 0                     # 单次全量修复最大处理数量，0 表示不限制
+
+compensation:
+  include_failed: true                       # 是否在补偿时处理 FAILED 记录
+  include_pending_delete: true               # 是否在补偿时处理待删除记录
+  batch_size: 100                            # repair_only 模式下单次补偿批量上限
+
+# 删除策略配置
+deletion:
+  strategy: "soft_delete_only"              # soft_delete_only / soft_delete_and_unmount / hard_delete
+  unmount_from_wiki: false                   # 软删除后是否同时取消 wiki 挂载
+  archive_parent_node_token: ""             # 如需归档移动，可指定目标父节点 token
+
+# Dashboard 监控面板配置
+dashboard:
+  enabled: true                              # 是否启用 Web 面板
+  host: "0.0.0.0"                            # 监听地址
+  port: 8080                                  # 监听端口
+  database_url: "sqlite+aiosqlite:///dashboard/dashboard.db" # 开发默认落盘到 runtime.data_dir 下；生产建议改为 PostgreSQL
+
+# MCP 服务接入配置
+mcp:
+  transport: "stdio"                        # stdio / sse；本地调试建议 stdio，服务器共享建议 sse
+  host: "0.0.0.0"                           # 远程 MCP 服务监听地址
+  port: 8001                                 # 远程 MCP 服务监听端口
+  sse_path: "/mcp/sse"                      # SSE 握手入口
+  message_path: "/mcp/messages"             # MCP 消息收发入口
+  public_base_url: ""                       # 对外访问基地址；如需给客户端展示外网地址可填写
+
+# 自动知识提取配置
+extraction:
+  enabled: true                              # 是否启用规则版自动知识提取
+  max_candidates: 5                          # 单次最多返回候选知识条数
+  min_score: 3                               # 候选知识最低评分门槛
+  min_segment_length: 120                    # 分段识别的最小文本长度
+  max_excerpt_length: 320                    # 候选摘要最大长度
+  include_full_text_fallback: true           # 无明显分段时是否回退到全文识别

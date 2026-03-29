@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📚 Knowledge MCP Dashboard</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div id="app">
+        <!-- 顶部导航 -->
+        <nav class="bg-white shadow-sm border-b border-gray-200 px-6 py-4">
+            <div class="max-w-7xl mx-auto flex items-center justify-between">
+                <h1 class="text-xl font-bold text-gray-800">📚 飞书知识库 MCP Dashboard</h1>
+                <div class="text-sm text-gray-500">
+                    <span class="inline-block w-2 h-2 bg-green-500 rounded-full mr-1"></span>
+                    MCP Server 运行中
+                </div>
+            </div>
+        </nav>
+
+        <div class="max-w-7xl mx-auto px-6 py-6">
+            <!-- 统计卡片 -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div class="bg-white rounded-lg shadow-sm p-5 border border-gray-100">
+                    <div class="text-gray-500 text-sm mb-1">知识总数</div>
+                    <div class="text-3xl font-bold text-blue-600">{{ stats.total_skills }}</div>
+                </div>
+                <div class="bg-white rounded-lg shadow-sm p-5 border border-gray-100">
+                    <div class="text-gray-500 text-sm mb-1">今日新增</div>
+                    <div class="text-3xl font-bold text-green-600">{{ stats.today_saved }}</div>
+                </div>
+                <div class="bg-white rounded-lg shadow-sm p-5 border border-gray-100">
+                    <div class="text-gray-500 text-sm mb-1">本周新增</div>
+                    <div class="text-3xl font-bold text-purple-600">{{ stats.week_saved }}</div>
+                </div>
+                <div class="bg-white rounded-lg shadow-sm p-5 border border-gray-100">
+                    <div class="text-gray-500 text-sm mb-1">成功检索次数</div>
+                    <div class="text-3xl font-bold text-orange-600">{{ stats.total_searches }}</div>
+                    <div class="text-xs text-gray-400 mt-2 space-y-1">
+                        <div>总请求 {{ stats.total_search_attempts || 0 }} 次</div>
+                        <div>失败 {{ stats.failed_searches || 0 }} 次</div>
+                    </div>
+                </div>
+            </div>
+
+            <div
+                v-if="stats.exception_counts && stats.exception_counts.total_exceptions > 0"
+                class="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 mb-6 text-sm text-amber-800"
+            >
+                <div class="font-medium mb-1">当前异常知识概览</div>
+                <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs md:text-sm">
+                    <span>待索引 {{ stats.exception_counts.pending_index || 0 }}</span>
+                    <span>待重建 {{ stats.exception_counts.pending_reindex || 0 }}</span>
+                    <span>待删除补偿 {{ stats.exception_counts.pending_delete || 0 }}</span>
+                    <span>失败 {{ stats.exception_counts.failed || 0 }}</span>
+                    <span>已删除 {{ stats.exception_counts.deleted || 0 }}</span>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+                <div class="bg-white rounded-lg shadow-sm p-5 border border-gray-100">
+                    <div class="text-gray-500 text-sm mb-1">自动化会话数</div>
+                    <div class="text-3xl font-bold text-indigo-600">{{ automationOverview.total_sessions || 0 }}</div>
+                </div>
+                <div class="bg-white rounded-lg shadow-sm p-5 border border-gray-100">
+                    <div class="text-gray-500 text-sm mb-1">自动保存数</div>
+                    <div class="text-3xl font-bold text-green-600">{{ automationOverview.total_auto_saved || 0 }}</div>
+                </div>
+                <div class="bg-white rounded-lg shadow-sm p-5 border border-gray-100">
+                    <div class="text-gray-500 text-sm mb-1">待审核数</div>
+                    <div class="text-3xl font-bold text-yellow-600">{{ automationOverview.pending_review_items || 0 }}</div>
+                </div>
+                <div class="bg-white rounded-lg shadow-sm p-5 border border-gray-100">
+                    <div class="text-gray-500 text-sm mb-1">已驳回数</div>
+                    <div class="text-3xl font-bold text-red-500">{{ automationOverview.rejected_review_items || 0 }}</div>
+                </div>
+                <div class="bg-white rounded-lg shadow-sm p-5 border border-gray-100">
+                    <div class="text-gray-500 text-sm mb-1">自动化失败会话</div>
+                    <div class="text-3xl font-bold text-rose-600">{{ (automationOverview.retrieval_failed_sessions || 0) + (automationOverview.extraction_failed_sessions || 0) + (automationOverview.save_failed_sessions || 0) }}</div>
+                    <div class="text-xs text-gray-400 mt-2 space-y-1">
+                        <div>检索失败 {{ automationOverview.retrieval_failed_sessions || 0 }}</div>
+                        <div>提取失败 {{ automationOverview.extraction_failed_sessions || 0 }} / 保存失败 {{ automationOverview.save_failed_sessions || 0 }}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div class="bg-white rounded-lg shadow-sm p-5 border border-gray-100">
+                    <div class="text-gray-500 text-sm mb-1">建议新建</div>
+                    <div class="text-3xl font-bold text-sky-600">{{ governanceOverview.review_create_new || 0 }}</div>
+                </div>
+                <div class="bg-white rounded-lg shadow-sm p-5 border border-gray-100">
+                    <div class="text-gray-500 text-sm mb-1">建议合并</div>
+                    <div class="text-3xl font-bold text-purple-600">{{ governanceOverview.review_merge_existing || 0 }}</div>
+                </div>
+                <div class="bg-white rounded-lg shadow-sm p-5 border border-gray-100">
+                    <div class="text-gray-500 text-sm mb-1">建议复用</div>
+                    <div class="text-3xl font-bold text-emerald-600">{{ governanceOverview.review_reuse_existing || 0 }}</div>
+                </div>
+                <div class="bg-white rounded-lg shadow-sm p-5 border border-gray-100">
+                    <div class="text-gray-500 text-sm mb-1">待审核重复候选</div>
+                    <div class="text-3xl font-bold text-amber-600">{{ governanceOverview.pending_with_related_skill || 0 }}</div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-lg shadow-sm p-5 border border-gray-100 mb-6">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="font-bold text-gray-700">🌐 正式远程服务状态</h3>
+                    <span class="text-xs text-gray-400">SSE 远程接入治理视图</span>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+                    <div>
+                        <div class="text-gray-500 mb-1">传输模式</div>
+                        <div class="font-semibold text-gray-800">{{ remoteRuntime.mcp?.transport || 'unknown' }}</div>
+                    </div>
+                    <div>
+                        <div class="text-gray-500 mb-1">鉴权状态</div>
+                        <div class="font-semibold" :class="remoteRuntime.remote_service?.auth_enabled ? 'text-green-600' : 'text-amber-600'">
+                            {{ remoteRuntime.remote_service?.auth_enabled ? '已启用' : '未启用' }}
+                        </div>
+                    </div>
+                    <div>
+                        <div class="text-gray-500 mb-1">限流阈值</div>
+                        <div class="font-semibold text-gray-800">{{ remoteRuntime.remote_service?.rate_limit_per_minute || 0 }} / 分钟</div>
+                    </div>
+                    <div>
+                        <div class="text-gray-500 mb-1">最大并发</div>
+                        <div class="font-semibold text-gray-800">{{ remoteRuntime.remote_service?.max_concurrency || 0 }}</div>
+                    </div>
+                </div>
+                <div class="mt-4 text-xs text-gray-500 break-all space-y-1">
+                    <div>公开接入地址：{{ remoteRuntime.mcp?.sse_url || '当前为本地模式或未配置' }}</div>
+                    <div>消息提交地址：{{ remoteRuntime.mcp?.message_url || '当前为本地模式或未配置' }}</div>
+                    <div>Dashboard 运行态：{{ remoteRuntime.dashboard?.runtime_url || '/runtime' }}</div>
+                </div>
+            </div>
+
+            <div
+                v-if="automationMessage"
+                class="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-6 text-sm text-blue-800"
+            >
+                {{ automationMessage }}
+            </div>
+
+            <!-- 图表区域 -->
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div class="bg-white rounded-lg shadow-sm p-5 border border-gray-100">
+                    <h3 class="font-bold text-gray-700 mb-3">📈 沉淀趋势（近30天）</h3>
+                    <div ref="trendChart" style="height: 300px;"></div>
+                </div>
+                <div class="bg-white rounded-lg shadow-sm p-5 border border-gray-100">
+                    <h3 class="font-bold text-gray-700 mb-3">📊 分类分布</h3>
+                    <div ref="categoryChart" style="height: 300px;"></div>
+                </div>
+                <div class="bg-white rounded-lg shadow-sm p-5 border border-gray-100">
+                    <h3 class="font-bold text-gray-700 mb-3">🧭 同步状态分布</h3>
+                    <div ref="syncStatusChart" style="height: 300px;"></div>
+                </div>
+            </div>
+
+            <!-- 热门知识 -->
+            <div class="bg-white rounded-lg shadow-sm p-5 border border-gray-100 mb-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="font-bold text-gray-700">🔥 热门知识（近30天）</h3>
+                    <span class="text-sm text-gray-400">按检索命中次数排序</span>
+                </div>
+
+                <div v-if="hotSkills.length === 0" class="py-8 text-center text-gray-400">
+                    暂无热门知识数据
+                </div>
+
+                <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div
+                        v-for="(skill, index) in hotSkills"
+                        :key="skill.skill_id"
+                        class="hot-skill-card border border-gray-100 rounded-lg p-4"
+                    >
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0 flex-1">
+                                <div class="flex items-center gap-2 mb-2 flex-wrap">
+                                    <span class="hot-skill-rank">#{{ index + 1 }}</span>
+                                    <div class="font-semibold text-gray-800 truncate">{{ skill.title }}</div>
+                                    <span
+                                        v-if="skill.sync_status"
+                                        :class="getSyncStatusClass(skill.sync_status)"
+                                        class="text-xs px-2 py-0.5 rounded"
+                                    >
+                                        {{ skill.sync_status }}
+                                    </span>
+                                </div>
+                                <div class="flex flex-wrap gap-2 text-xs mb-3">
+                                    <span v-if="skill.category" class="bg-blue-50 text-blue-700 px-2 py-0.5 rounded">📂 {{ skill.category }}</span>
+                                    <span v-if="skill.project" class="bg-green-50 text-green-700 px-2 py-0.5 rounded">🏷️ {{ skill.project }}</span>
+                                    <span v-if="skill.deleted" class="bg-gray-100 text-gray-600 px-2 py-0.5 rounded">已删除</span>
+                                </div>
+                                <div class="text-sm text-gray-600 flex flex-wrap gap-x-4 gap-y-1">
+                                    <span>命中次数：<strong class="text-orange-600">{{ skill.hit_count }}</strong></span>
+                                    <span>最佳排名：<strong class="text-purple-600">#{{ skill.best_rank || '-' }}</strong></span>
+                                </div>
+                                <div class="text-xs text-gray-400 mt-2">
+                                    最近命中：{{ formatAbsoluteTime(skill.last_hit_at) }}
+                                </div>
+                            </div>
+                            <a
+                                v-if="skill.feishu_doc_url"
+                                :href="skill.feishu_doc_url"
+                                target="_blank"
+                                class="text-sm text-blue-500 hover:underline whitespace-nowrap"
+                            >
+                                查看 →
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 筛选条件 -->
+            <div class="bg-white rounded-lg shadow-sm p-4 mb-4 border border-gray-100">
+                <div class="flex flex-wrap gap-3 items-center justify-between">
+                    <div class="flex flex-wrap gap-2 items-center">
+                        <button
+                            @click="switchTab('logs')"
+                            :class="activeTab === 'logs' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-600'"
+                            class="px-4 py-1.5 rounded text-sm"
+                        >
+                            📋 操作记录
+                        </button>
+                        <button
+                            @click="switchTab('exceptions')"
+                            :class="activeTab === 'exceptions' ? 'bg-red-500 text-white' : 'bg-gray-100 text-gray-600'"
+                            class="px-4 py-1.5 rounded text-sm"
+                        >
+                            🚨 异常知识
+                        </button>
+                        <button
+                            @click="switchTab('registry')"
+                            :class="activeTab === 'registry' ? 'bg-indigo-500 text-white' : 'bg-gray-100 text-gray-600'"
+                            class="px-4 py-1.5 rounded text-sm"
+                        >
+                            🗂️ 注册表
+                        </button>
+                        <button
+                            @click="switchTab('automation')"
+                            :class="activeTab === 'automation' ? 'bg-emerald-500 text-white' : 'bg-gray-100 text-gray-600'"
+                            class="px-4 py-1.5 rounded text-sm"
+                        >
+                            🤖 自动沉淀
+                        </button>
+                        <button
+                            @click="switchTab('governance')"
+                            :class="activeTab === 'governance' ? 'bg-purple-500 text-white' : 'bg-gray-100 text-gray-600'"
+                            class="px-4 py-1.5 rounded text-sm"
+                        >
+                            🛡️ 知识治理
+                        </button>
+                    </div>
+
+                    <div v-if="activeTab === 'logs'" class="flex flex-wrap gap-3 items-center">
+
+                        <select v-model="filter.operation" class="border rounded px-3 py-1.5 text-sm">
+                            <option value="">全部操作</option>
+                            <option value="save">📥 沉淀</option>
+                            <option value="search">🔍 检索</option>
+                            <option value="update">✏️ 更新</option>
+                            <option value="delete">🗑️ 删除</option>
+                            <option value="extract">🧠 提取</option>
+                        </select>
+                        <select v-model="filter.category" class="border rounded px-3 py-1.5 text-sm">
+                            <option value="">全部分类</option>
+                            <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
+                        </select>
+                        <input type="date" v-model="filter.date_from" class="border rounded px-3 py-1.5 text-sm" placeholder="开始日期">
+                        <input type="date" v-model="filter.date_to" class="border rounded px-3 py-1.5 text-sm" placeholder="结束日期">
+                        <button @click="loadLogs" class="bg-blue-500 text-white px-4 py-1.5 rounded text-sm hover:bg-blue-600">
+                            筛选
+                        </button>
+                        <button @click="resetFilter" class="text-gray-500 px-3 py-1.5 text-sm hover:text-gray-700">
+                            重置
+                        </button>
+                    </div>
+
+                    <div v-else-if="activeTab === 'exceptions'" class="flex flex-wrap gap-3 items-center">
+                        <label class="flex items-center gap-2 text-sm text-gray-600">
+                            <input type="checkbox" v-model="exceptionFilter.include_deleted">
+                            包含已删除知识
+                        </label>
+                        <button @click="loadExceptions" class="bg-red-500 text-white px-4 py-1.5 rounded text-sm hover:bg-red-600">
+                            刷新异常视图
+                        </button>
+                    </div>
+
+                    <div v-else-if="activeTab === 'registry'" class="flex flex-wrap gap-3 items-center">
+                        <select v-model="registryFilter.status" class="border rounded px-3 py-1.5 text-sm">
+                            <option value="">全部状态</option>
+                            <option v-for="status in registryFilterOptions.sync_statuses" :key="status" :value="status">{{ status }}</option>
+                        </select>
+                        <select v-model="registryFilter.category" class="border rounded px-3 py-1.5 text-sm">
+                            <option value="">全部分类</option>
+                            <option v-for="cat in registryFilterOptions.categories" :key="cat" :value="cat">{{ cat }}</option>
+                        </select>
+                        <select v-model="registryFilter.project" class="border rounded px-3 py-1.5 text-sm">
+                            <option value="">全部项目</option>
+                            <option value="__EMPTY__">未关联项目</option>
+                            <option v-for="project in registryFilterOptions.projects" :key="project" :value="project">{{ project }}</option>
+                        </select>
+                        <select v-model="registryFilter.deleted" class="border rounded px-3 py-1.5 text-sm">
+                            <option value="">全部删除状态</option>
+                            <option value="false">仅正常知识</option>
+                            <option value="true">仅已删除知识</option>
+                        </select>
+                        <button @click="loadRegistryRecords" class="bg-indigo-500 text-white px-4 py-1.5 rounded text-sm hover:bg-indigo-600">
+                            筛选注册表
+                        </button>
+                        <button @click="resetRegistryFilter" class="text-gray-500 px-3 py-1.5 text-sm hover:text-gray-700">
+                            重置
+                        </button>
+                    </div>
+
+                    <div v-else-if="activeTab === 'automation'" class="flex flex-wrap gap-3 items-center">
+                        <select v-model="automationFilter.status" class="border rounded px-3 py-1.5 text-sm">
+                            <option value="">全部审核状态</option>
+                            <option value="pending">待审核</option>
+                            <option value="approved">已通过</option>
+                            <option value="rejected">已驳回</option>
+                        </select>
+                        <select v-model="automationFilter.confidence" class="border rounded px-3 py-1.5 text-sm">
+                            <option value="">全部置信度</option>
+                            <option value="medium">中置信度</option>
+                            <option value="high">高置信度</option>
+                            <option value="low">低置信度</option>
+                        </select>
+                        <input v-model="automationFilter.project" class="border rounded px-3 py-1.5 text-sm" placeholder="项目名">
+                        <input v-model="automationFilter.session_id" class="border rounded px-3 py-1.5 text-sm" placeholder="会话ID">
+                        <button @click="loadAutomationReviews" class="bg-emerald-500 text-white px-4 py-1.5 rounded text-sm hover:bg-emerald-600">
+                            筛选审核队列
+                        </button>
+                        <button @click="batchApproveVisibleReviews" class="bg-green-500 text-white px-4 py-1.5 rounded text-sm hover:bg-green-600">
+                            当前页全部通过
+                        </button>
+                        <button @click="batchRejectVisibleReviews" class="bg-red-500 text-white px-4 py-1.5 rounded text-sm hover:bg-red-600">
+                            当前页全部驳回
+                        </button>
+                        <button @click="resetAutomationFilter" class="text-gray-500 px-3 py-1.5 text-sm hover:text-gray-700">
+                            重置
+                        </button>
+                    </div>
+
+                    <div v-else-if="activeTab === 'governance'" class="flex flex-wrap gap-3 items-center">
+                        <button @click="loadGovernanceOverview" class="bg-purple-500 text-white px-4 py-1.5 rounded text-sm hover:bg-purple-600">
+                            刷新治理总览
+                        </button>
+                        <button @click="loadRemoteRuntime" class="bg-slate-600 text-white px-4 py-1.5 rounded text-sm hover:bg-slate-700">
+                            刷新远程状态
+                        </button>
+                        <button @click="loadAutomationReviews" class="bg-emerald-500 text-white px-4 py-1.5 rounded text-sm hover:bg-emerald-600">
+                            刷新治理候选
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 操作记录列表 -->
+            <div v-if="activeTab === 'logs'" class="bg-white rounded-lg shadow-sm border border-gray-100">
+                <div class="px-5 py-3 border-b border-gray-100">
+                    <h2 class="font-bold text-gray-700">📋 操作记录</h2>
+                </div>
+
+                <div v-if="logs.length === 0" class="p-8 text-center text-gray-400">
+                    暂无操作记录
+                </div>
+
+                <div v-for="log in logs" :key="log.id" class="border-b border-gray-50 px-5 py-4 hover:bg-gray-50 transition">
+                    <div class="flex items-start gap-3">
+                        <!-- 操作图标 -->
+                        <span class="text-2xl mt-0.5">{{ getOpIcon(log.operation) }}</span>
+                        <!-- 详情 -->
+                        <div class="flex-1 min-w-0">
+                            <div class="font-medium text-gray-800">
+                                {{ log.skill_title || log.search_query || '未知操作' }}
+                            </div>
+                            <div class="flex flex-wrap gap-2 mt-1.5 text-xs">
+                                <span v-if="log.skill_category" class="bg-blue-50 text-blue-700 px-2 py-0.5 rounded">
+                                    {{ log.skill_category }}
+                                </span>
+                                <span v-if="log.skill_project" class="bg-green-50 text-green-700 px-2 py-0.5 rounded">
+                                    🏷️ {{ log.skill_project }}
+                                </span>
+                                <span v-if="log.feishu_folder" class="bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
+                                    📁 {{ log.feishu_folder }}
+                                </span>
+                                <span v-if="log.search_results_count !== null && log.operation === 'search'" class="bg-orange-50 text-orange-700 px-2 py-0.5 rounded">
+                                    命中 {{ log.search_results_count }} 条
+                                </span>
+                                <span v-if="log.search_results_count !== null && log.operation === 'extract'" class="bg-purple-50 text-purple-700 px-2 py-0.5 rounded">
+                                    候选 {{ log.search_results_count }} 条
+                                </span>
+                                <a v-if="log.feishu_doc_url && !log.feishu_doc_url.startsWith('[')" 
+                                   :href="log.feishu_doc_url" target="_blank"
+                                   class="text-blue-500 hover:underline">
+                                    查看飞书文档 →
+                                </a>
+                            </div>
+                            <div v-if="log.content_preview" class="text-xs text-gray-400 mt-1 truncate">
+                                {{ log.content_preview }}
+                            </div>
+                            <div v-if="log.status === 'failed'" class="text-xs text-red-500 mt-1">
+                                ❌ {{ log.error_message }}
+                            </div>
+                        </div>
+                        <!-- 时间 -->
+                        <div class="text-gray-400 text-xs whitespace-nowrap">
+                            {{ formatTime(log.timestamp) }}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 分页 -->
+                <div v-if="pagination.total_pages > 1" class="px-5 py-3 flex items-center justify-between border-t border-gray-100">
+                    <span class="text-sm text-gray-500">共 {{ pagination.total }} 条记录</span>
+                    <div class="flex gap-2">
+                        <button @click="changePage(pagination.page - 1)" :disabled="pagination.page <= 1"
+                                class="px-3 py-1 border rounded text-sm disabled:opacity-50">
+                            上一页
+                        </button>
+                        <span class="px-3 py-1 text-sm text-gray-600">{{ pagination.page }} / {{ pagination.total_pages }}</span>
+                        <button @click="changePage(pagination.page + 1)" :disabled="pagination.page >= pagination.total_pages"
+                                class="px-3 py-1 border rounded text-sm disabled:opacity-50">
+                            下一页
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 异常知识列表 -->
+            <div v-else-if="activeTab === 'exceptions'" class="bg-white rounded-lg shadow-sm border border-gray-100">
+                <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+                    <h2 class="font-bold text-gray-700">🚨 异常知识</h2>
+                    <span class="text-sm text-gray-500">待索引 / 待重建 / 待删除补偿 / 失败 / 已删除</span>
+                </div>
+
+                <div v-if="exceptionRecords.length === 0" class="p-8 text-center text-gray-400">
+                    暂无异常知识
+                </div>
+
+                <div v-for="record in exceptionRecords" :key="record.skill_id" class="border-b border-gray-50 px-5 py-4 hover:bg-gray-50 transition">
+                    <div class="flex items-start justify-between gap-4">
+                        <div class="min-w-0 flex-1">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <div class="font-medium text-gray-800">{{ record.title || record.skill_id }}</div>
+                                <span class="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600">{{ getExceptionTitle(record) }}</span>
+                                <span :class="getSyncStatusClass(record.sync_status)" class="text-xs px-2 py-0.5 rounded">
+                                    {{ record.sync_status || 'UNKNOWN' }}
+                                </span>
+                            </div>
+                            <div class="flex flex-wrap gap-2 mt-2 text-xs">
+                                <span class="bg-blue-50 text-blue-700 px-2 py-0.5 rounded">🆔 {{ record.skill_id }}</span>
+                                <span v-if="record.category" class="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded">📂 {{ record.category }}</span>
+                                <span v-if="record.project" class="bg-green-50 text-green-700 px-2 py-0.5 rounded">🏷️ {{ record.project }}</span>
+                                <span v-if="record.version" class="bg-gray-100 text-gray-600 px-2 py-0.5 rounded">版本 {{ record.version }}</span>
+                                <a
+                                    v-if="record.feishu_doc_url"
+                                    :href="record.feishu_doc_url"
+                                    target="_blank"
+                                    class="text-blue-500 hover:underline"
+                                >
+                                    查看飞书文档 →
+                                </a>
+                            </div>
+                            <div v-if="record.last_error" class="text-xs text-red-500 mt-2 break-all">
+                                ❌ {{ record.last_error }}
+                            </div>
+                        </div>
+                        <div class="text-gray-400 text-xs whitespace-nowrap">
+                            {{ formatTime(record.updated_at || record.created_at) }}
+                        </div>
+                    </div>
+                </div>
+
+                <div v-if="exceptionPagination.total_pages > 1" class="px-5 py-3 flex items-center justify-between border-t border-gray-100">
+                    <span class="text-sm text-gray-500">共 {{ exceptionPagination.total }} 条异常知识</span>
+                    <div class="flex gap-2">
+                        <button @click="changeExceptionPage(exceptionPagination.page - 1)" :disabled="exceptionPagination.page <= 1"
+                                class="px-3 py-1 border rounded text-sm disabled:opacity-50">
+                            上一页
+                        </button>
+                        <span class="px-3 py-1 text-sm text-gray-600">{{ exceptionPagination.page }} / {{ exceptionPagination.total_pages }}</span>
+                        <button @click="changeExceptionPage(exceptionPagination.page + 1)" :disabled="exceptionPagination.page >= exceptionPagination.total_pages"
+                                class="px-3 py-1 border rounded text-sm disabled:opacity-50">
+                            下一页
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 自动沉淀视图 -->
+            <div v-else-if="activeTab === 'automation'" class="space-y-6">
+                <div class="bg-white rounded-lg shadow-sm border border-gray-100">
+                    <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+                        <h2 class="font-bold text-gray-700">🤖 自动化会话</h2>
+                        <span class="text-sm text-gray-500">自动检索 → 自动提取 → 自动保存 / 审核</span>
+                    </div>
+
+                    <div v-if="automationSessions.length === 0" class="p-8 text-center text-gray-400">
+                        暂无自动化会话记录
+                    </div>
+
+                    <div v-else class="divide-y divide-gray-50">
+                        <div v-for="session in automationSessions" :key="session.session_id" class="px-5 py-4 hover:bg-gray-50 transition">
+                            <div class="flex items-start justify-between gap-4">
+                                <div class="min-w-0 flex-1">
+                                    <div class="flex flex-wrap items-center gap-2 mb-2">
+                                        <div class="font-medium text-gray-800 break-all">{{ session.user_goal || session.normalized_query || session.session_id }}</div>
+                                        <span :class="getAutomationStatusClass(session.retrieval_status)" class="text-xs px-2 py-0.5 rounded">检索 {{ session.retrieval_status || 'pending' }}</span>
+                                        <span :class="getAutomationStatusClass(session.extraction_status)" class="text-xs px-2 py-0.5 rounded">提取 {{ session.extraction_status || 'pending' }}</span>
+                                        <span :class="getAutomationStatusClass(session.save_status)" class="text-xs px-2 py-0.5 rounded">保存 {{ session.save_status || 'pending' }}</span>
+                                    </div>
+                                    <div class="flex flex-wrap gap-2 text-xs mb-2">
+                                        <span class="bg-slate-100 text-slate-700 px-2 py-0.5 rounded">会话ID {{ session.session_id }}</span>
+                                        <span class="bg-green-50 text-green-700 px-2 py-0.5 rounded">项目 {{ session.project || '未关联项目' }}</span>
+                                        <span class="bg-blue-50 text-blue-700 px-2 py-0.5 rounded">召回 {{ session.auto_retrieval_count || 0 }}</span>
+                                        <span class="bg-purple-50 text-purple-700 px-2 py-0.5 rounded">候选 {{ session.extracted_candidates || 0 }}</span>
+                                        <span class="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded">自动保存 {{ session.auto_saved_count || 0 }}</span>
+                                        <span class="bg-yellow-50 text-yellow-700 px-2 py-0.5 rounded">待审核 {{ session.review_queued_count || 0 }}</span>
+                                        <span class="bg-gray-100 text-gray-600 px-2 py-0.5 rounded">已丢弃 {{ session.discarded_count || 0 }}</span>
+                                    </div>
+                                    <div class="text-xs text-gray-500 break-all">关键词：{{ formatList(session.keywords) }}</div>
+                                    <div v-if="session.saved_skill_ids && session.saved_skill_ids.length" class="text-xs text-gray-500 break-all mt-1">已保存知识：{{ formatList(session.saved_skill_ids) }}</div>
+                                    <div v-if="session.last_error" class="text-xs text-red-500 mt-2 break-all">❌ {{ session.last_error }}</div>
+                                </div>
+                                <div class="text-gray-400 text-xs whitespace-nowrap">
+                                    {{ formatTime(session.updated_at || session.created_at) }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div v-if="automationSessionPagination.total_pages > 1" class="px-5 py-3 flex items-center justify-between border-t border-gray-100">
+                        <span class="text-sm text-gray-500">共 {{ automationSessionPagination.total }} 条自动化会话</span>
+                        <div class="flex gap-2">
+                            <button @click="changeAutomationSessionPage(automationSessionPagination.page - 1)" :disabled="automationSessionPagination.page <= 1"
+                                    class="px-3 py-1 border rounded text-sm disabled:opacity-50">
+                                上一页
+                            </button>
+                            <span class="px-3 py-1 text-sm text-gray-600">{{ automationSessionPagination.page }} / {{ automationSessionPagination.total_pages }}</span>
+                            <button @click="changeAutomationSessionPage(automationSessionPagination.page + 1)" :disabled="automationSessionPagination.page >= automationSessionPagination.total_pages"
+                                    class="px-3 py-1 border rounded text-sm disabled:opacity-50">
+                                下一页
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow-sm border border-gray-100">
+                    <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+                        <h2 class="font-bold text-gray-700">🧾 审核队列</h2>
+                        <span class="text-sm text-gray-500">中置信度候选知识的治理入口</span>
+                    </div>
+
+                    <div v-if="reviewItems.length === 0" class="p-8 text-center text-gray-400">
+                        暂无审核项
+                    </div>
+
+                    <div v-else class="divide-y divide-gray-50">
+                        <div v-for="item in reviewItems" :key="item.review_id" class="px-5 py-4 hover:bg-gray-50 transition">
+                            <div class="flex items-start justify-between gap-4">
+                                <div class="min-w-0 flex-1">
+                                    <div class="flex flex-wrap items-center gap-2 mb-2">
+                                        <div class="font-medium text-gray-800">{{ item.title }}</div>
+                                        <span :class="getAutomationStatusClass(item.status)" class="text-xs px-2 py-0.5 rounded">{{ item.status || 'pending' }}</span>
+                                        <span :class="getConfidenceClass(item.confidence)" class="text-xs px-2 py-0.5 rounded">{{ item.confidence || 'unknown' }}</span>
+                                        <span class="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600">评分 {{ item.score || 0 }}</span>
+                                    </div>
+                                    <div class="flex flex-wrap gap-2 text-xs mb-2">
+                                        <span class="bg-slate-100 text-slate-700 px-2 py-0.5 rounded">审核ID {{ item.review_id }}</span>
+                                        <span class="bg-blue-50 text-blue-700 px-2 py-0.5 rounded">会话 {{ item.session_id }}</span>
+                                        <span v-if="item.category" class="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded">📂 {{ item.category }}</span>
+                                        <span class="bg-green-50 text-green-700 px-2 py-0.5 rounded">🏷️ {{ item.project || '未关联项目' }}</span>
+                                        <span v-if="item.related_skill_id" class="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded">已入库 {{ item.related_skill_id }}</span>
+                                    </div>
+                                    <div class="text-sm text-gray-600 mb-2 break-all">{{ item.excerpt || item.draft_content || '暂无摘要' }}</div>
+                                    <div class="text-xs text-gray-500 break-all">原因：{{ formatList(item.reasons) }}</div>
+                                    <div v-if="item.tags && item.tags.length" class="flex flex-wrap gap-1 mt-2">
+                                        <span v-for="tag in item.tags" :key="tag" class="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-xs">#{{ tag }}</span>
+                                    </div>
+                                    <div v-if="item.last_error" class="text-xs text-red-500 mt-2 break-all">❌ {{ item.last_error }}</div>
+                                </div>
+                                <div class="flex flex-col items-end gap-2">
+                                    <div class="text-gray-400 text-xs whitespace-nowrap">{{ formatTime(item.updated_at || item.created_at) }}</div>
+                                    <div v-if="item.status === 'pending'" class="flex gap-2">
+                                        <button
+                                            @click="approveReviewItem(item.review_id)"
+                                            :disabled="isReviewBusy(item.review_id)"
+                                            class="px-3 py-1.5 rounded text-xs bg-green-500 text-white hover:bg-green-600 disabled:opacity-50"
+                                        >
+                                            通过
+                                        </button>
+                                        <button
+                                            @click="rejectReviewItem(item.review_id)"
+                                            :disabled="isReviewBusy(item.review_id)"
+                                            class="px-3 py-1.5 rounded text-xs bg-red-500 text-white hover:bg-red-600 disabled:opacity-50"
+                                        >
+                                            驳回
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div v-if="reviewPagination.total_pages > 1" class="px-5 py-3 flex items-center justify-between border-t border-gray-100">
+                        <span class="text-sm text-gray-500">共 {{ reviewPagination.total }} 条审核项</span>
+                        <div class="flex gap-2">
+                            <button @click="changeReviewPage(reviewPagination.page - 1)" :disabled="reviewPagination.page <= 1"
+                                    class="px-3 py-1 border rounded text-sm disabled:opacity-50">
+                                上一页
+                            </button>
+                            <span class="px-3 py-1 text-sm text-gray-600">{{ reviewPagination.page }} / {{ reviewPagination.total_pages }}</span>
+                            <button @click="changeReviewPage(reviewPagination.page + 1)" :disabled="reviewPagination.page >= reviewPagination.total_pages"
+                                    class="px-3 py-1 border rounded text-sm disabled:opacity-50">
+                                下一页
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div v-else-if="activeTab === 'governance'" class="space-y-6">
+                <div class="bg-white rounded-lg shadow-sm border border-gray-100 p-5">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="font-bold text-gray-700">🛡️ 治理决策总览</h2>
+                        <span class="text-sm text-gray-500">防止自动沉淀导致知识无限膨胀</span>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                        <div class="rounded-lg border border-sky-100 bg-sky-50 p-4">
+                            <div class="text-sky-700 font-medium mb-1">建议新建</div>
+                            <div class="text-2xl font-bold text-sky-600">{{ governanceOverview.review_create_new || 0 }}</div>
+                            <div class="text-xs text-sky-600 mt-2">适合创建全新知识卡片</div>
+                        </div>
+                        <div class="rounded-lg border border-purple-100 bg-purple-50 p-4">
+                            <div class="text-purple-700 font-medium mb-1">建议合并</div>
+                            <div class="text-2xl font-bold text-purple-600">{{ governanceOverview.review_merge_existing || 0 }}</div>
+                            <div class="text-xs text-purple-600 mt-2">与已有知识主题高度相近</div>
+                        </div>
+                        <div class="rounded-lg border border-emerald-100 bg-emerald-50 p-4">
+                            <div class="text-emerald-700 font-medium mb-1">建议复用</div>
+                            <div class="text-2xl font-bold text-emerald-600">{{ governanceOverview.review_reuse_existing || 0 }}</div>
+                            <div class="text-xs text-emerald-600 mt-2">命中重复内容，可直接复用已有知识</div>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm mt-4">
+                        <div class="rounded-lg border border-amber-100 bg-amber-50 p-4">
+                            <div class="text-amber-700 font-medium mb-1">待审核重复候选</div>
+                            <div class="text-2xl font-bold text-amber-600">{{ governanceOverview.pending_with_related_skill || 0 }}</div>
+                        </div>
+                        <div class="rounded-lg border border-green-100 bg-green-50 p-4">
+                            <div class="text-green-700 font-medium mb-1">已批准并合并</div>
+                            <div class="text-2xl font-bold text-green-600">{{ governanceOverview.approved_merge_existing || 0 }}</div>
+                        </div>
+                        <div class="rounded-lg border border-indigo-100 bg-indigo-50 p-4">
+                            <div class="text-indigo-700 font-medium mb-1">已批准并新建</div>
+                            <div class="text-2xl font-bold text-indigo-600">{{ governanceOverview.approved_create_new || 0 }}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow-sm border border-gray-100 p-5">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="font-bold text-gray-700">🌐 远程服务运行态</h2>
+                        <span class="text-sm text-gray-500">正式远程接入的安全与治理配置</span>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                        <div class="rounded-lg border border-gray-100 p-4">
+                            <div class="text-gray-500 mb-2">远程 MCP</div>
+                            <div class="space-y-1 break-all text-gray-700">
+                                <div>模式：{{ remoteRuntime.mcp?.transport || 'unknown' }}</div>
+                                <div>监听：{{ remoteRuntime.mcp?.host || '-' }}:{{ remoteRuntime.mcp?.port || '-' }}</div>
+                                <div>SSE：{{ remoteRuntime.mcp?.sse_url || '-' }}</div>
+                                <div>Message：{{ remoteRuntime.mcp?.message_url || '-' }}</div>
+                            </div>
+                        </div>
+                        <div class="rounded-lg border border-gray-100 p-4">
+                            <div class="text-gray-500 mb-2">远程治理</div>
+                            <div class="space-y-1 break-all text-gray-700">
+                                <div>鉴权：{{ remoteRuntime.remote_service?.auth_enabled ? '已启用' : '未启用' }}</div>
+                                <div>限流：{{ remoteRuntime.remote_service?.rate_limit_per_minute || 0 }} / 分钟</div>
+                                <div>超时：{{ remoteRuntime.remote_service?.request_timeout_seconds || 0 }} 秒</div>
+                                <div>并发：{{ remoteRuntime.remote_service?.max_concurrency || 0 }}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow-sm border border-gray-100">
+                    <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+                        <h2 class="font-bold text-gray-700">🔁 治理候选明细</h2>
+                        <span class="text-sm text-gray-500">优先查看带 `related_skill_id` 的候选项</span>
+                    </div>
+
+                    <div v-if="reviewItems.length === 0" class="p-8 text-center text-gray-400">
+                        暂无治理候选
+                    </div>
+
+                    <div v-else class="divide-y divide-gray-50">
+                        <div v-for="item in reviewItems" :key="item.review_id" class="px-5 py-4 hover:bg-gray-50 transition">
+                            <div class="flex items-start justify-between gap-4">
+                                <div class="min-w-0 flex-1">
+                                    <div class="flex flex-wrap items-center gap-2 mb-2">
+                                        <div class="font-medium text-gray-800">{{ item.title }}</div>
+                                        <span :class="getAutomationStatusClass(item.status)" class="text-xs px-2 py-0.5 rounded">{{ item.status || 'pending' }}</span>
+                                        <span class="text-xs px-2 py-0.5 rounded bg-purple-50 text-purple-700">治理动作 {{ item.auto_decision || 'review' }}</span>
+                                    </div>
+                                    <div class="flex flex-wrap gap-2 text-xs mb-2">
+                                        <span class="bg-slate-100 text-slate-700 px-2 py-0.5 rounded">审核ID {{ item.review_id }}</span>
+                                        <span v-if="item.related_skill_id" class="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded">关联知识 {{ item.related_skill_id }}</span>
+                                        <span v-if="item.project" class="bg-green-50 text-green-700 px-2 py-0.5 rounded">项目 {{ item.project }}</span>
+                                    </div>
+                                    <div class="text-sm text-gray-600 break-all">{{ item.excerpt || item.draft_content || '暂无摘要' }}</div>
+                                </div>
+                                <div class="text-gray-400 text-xs whitespace-nowrap">{{ formatTime(item.updated_at || item.created_at) }}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 注册表视图 -->
+            <div v-else class="bg-white rounded-lg shadow-sm border border-gray-100">
+
+                <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+                    <h2 class="font-bold text-gray-700">🗂️ 注册表视图</h2>
+                    <span class="text-sm text-gray-500">查看当前知识元数据、同步状态与删除标记</span>
+                </div>
+
+                <div v-if="registryRecords.length === 0" class="p-8 text-center text-gray-400">
+                    暂无注册表记录
+                </div>
+
+                <div v-else class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-100 text-sm">
+                        <thead class="bg-gray-50 text-gray-500">
+                            <tr>
+                                <th class="px-5 py-3 text-left font-medium">知识</th>
+                                <th class="px-4 py-3 text-left font-medium">分类 / 项目</th>
+                                <th class="px-4 py-3 text-left font-medium">状态</th>
+                                <th class="px-4 py-3 text-left font-medium">版本</th>
+                                <th class="px-4 py-3 text-left font-medium">更新时间</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-50">
+                            <tr v-for="record in registryRecords" :key="record.skill_id" class="hover:bg-gray-50 transition">
+                                <td class="px-5 py-4 align-top">
+                                    <div class="font-medium text-gray-800">{{ record.title || record.skill_id }}</div>
+                                    <div class="text-xs text-gray-400 mt-1 break-all">🆔 {{ record.skill_id }}</div>
+                                    <div v-if="record.tags && record.tags.length" class="flex flex-wrap gap-1 mt-2">
+                                        <span v-for="tag in record.tags" :key="tag" class="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-xs">#{{ tag }}</span>
+                                    </div>
+                                    <a
+                                        v-if="record.feishu_doc_url"
+                                        :href="record.feishu_doc_url"
+                                        target="_blank"
+                                        class="inline-block mt-2 text-blue-500 hover:underline text-xs"
+                                    >
+                                        查看飞书文档 →
+                                    </a>
+                                </td>
+                                <td class="px-4 py-4 align-top text-xs text-gray-600">
+                                    <div v-if="record.category" class="mb-1">📂 {{ record.category }}</div>
+                                    <div>🏷️ {{ record.project || '未关联项目' }}</div>
+                                </td>
+                                <td class="px-4 py-4 align-top">
+                                    <div class="flex flex-wrap gap-2">
+                                        <span :class="getSyncStatusClass(record.sync_status)" class="text-xs px-2 py-0.5 rounded">
+                                            {{ record.sync_status || 'UNKNOWN' }}
+                                        </span>
+                                        <span v-if="record.deleted" class="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-600">已删除</span>
+                                    </div>
+                                    <div v-if="record.last_error" class="text-xs text-red-500 mt-2 break-all">
+                                        ❌ {{ record.last_error }}
+                                    </div>
+                                </td>
+                                <td class="px-4 py-4 align-top text-xs text-gray-600">
+                                    {{ record.version || 1 }}
+                                </td>
+                                <td class="px-4 py-4 align-top text-xs text-gray-500 whitespace-nowrap">
+                                    {{ formatTime(record.updated_at || record.created_at) }}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div v-if="registryPagination.total_pages > 1" class="px-5 py-3 flex items-center justify-between border-t border-gray-100">
+                    <span class="text-sm text-gray-500">共 {{ registryPagination.total }} 条注册表记录</span>
+                    <div class="flex gap-2">
+                        <button @click="changeRegistryPage(registryPagination.page - 1)" :disabled="registryPagination.page <= 1"
+                                class="px-3 py-1 border rounded text-sm disabled:opacity-50">
+                            上一页
+                        </button>
+                        <span class="px-3 py-1 text-sm text-gray-600">{{ registryPagination.page }} / {{ registryPagination.total_pages }}</span>
+                        <button @click="changeRegistryPage(registryPagination.page + 1)" :disabled="registryPagination.page >= registryPagination.total_pages"
+                                class="px-3 py-1 border rounded text-sm disabled:opacity-50">
+                            下一页
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
