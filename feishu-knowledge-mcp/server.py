@@ -26,15 +26,11 @@ import logging
 import socket
 import sys
 import threading
-import time
-import uuid
-from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from mcp.server import Server
-from mcp.server.stdio import stdio_server
+from mcp.server.fastmcp import FastMCP
 
 # 配置日志
 logging.basicConfig(
@@ -48,7 +44,7 @@ logging.basicConfig(
 logger = logging.getLogger("feishu-knowledge-mcp")
 
 # 创建 MCP Server 实例
-app = Server("feishu-knowledge-mcp")
+app = FastMCP("feishu-knowledge-mcp")
 
 
 def _normalize_http_path(path_value: str, *, trailing_slash: bool = False) -> str:
@@ -320,201 +316,64 @@ def _start_dashboard(
 def _run_stdio_mcp_server():
     logger.info("🚀 MCP Server 已就绪（stdio 模式），等待本地进程连接...")
 
-    async def run():
-        async with stdio_server() as (read, write):
-            await app.run(read, write, app.create_initialization_options())
-
     try:
-        asyncio.run(run())
+        app.run()
     except KeyboardInterrupt:
         logger.info("MCP Server 已停止")
+
+
+def _derive_fastmcp_mount_path(sse_path: str, message_path: str) -> str:
+    normalized_sse_path = _normalize_http_path(sse_path)
+    normalized_message_path = _normalize_http_path(message_path, trailing_slash=True)
+
+    if not normalized_sse_path.endswith("/sse"):
+        raise RuntimeError(f"当前 FastMCP SSE 适配仅支持以 /sse 结尾的路径，收到: {normalized_sse_path}")
+
+    mount_path = normalized_sse_path[:-4] or "/"
+    expected_message_path = f"{mount_path.rstrip('/')}/messages/"
+    if mount_path == "/":
+        expected_message_path = "/messages/"
+
+    if normalized_message_path != expected_message_path:
+        raise RuntimeError(
+            "当前 FastMCP SSE 适配要求 message_path 与 sse_path 同属一个 mount_path。"
+            f" 例如 sse_path={mount_path.rstrip('/') or '/'} + '/sse'，"
+            f" message_path={mount_path.rstrip('/') or ''}/messages。"
+            f" 当前收到: sse_path={normalized_sse_path}, message_path={normalized_message_path.rstrip('/')}"
+        )
+
+    return mount_path
 
 
 def _run_sse_mcp_server(config: dict):
     import uvicorn
     from starlette.applications import Starlette
     from starlette.requests import Request
-    from starlette.responses import JSONResponse, PlainTextResponse
+    from starlette.responses import JSONResponse
     from starlette.routing import Mount, Route
-    from starlette.types import Receive, Scope, Send
-
-    try:
-        from mcp.server.sse import SseServerTransport
-    except Exception as exc:
-        raise RuntimeError("当前安装的 mcp SDK 不支持 SSE 远程传输，请升级 mcp 依赖后重试。") from exc
 
     mcp_config = config.get("mcp", {}) or {}
     host = str(mcp_config.get("host") or "0.0.0.0")
     port = int(mcp_config.get("port") or 8001)
     sse_path = _normalize_http_path(mcp_config.get("sse_path") or "/mcp/sse")
     message_path = _normalize_http_path(mcp_config.get("message_path") or "/mcp/messages", trailing_slash=True)
-    remote_service_config = config.get("remote_service", {}) or {}
-    auth_enabled = bool(remote_service_config.get("auth_enabled", False))
-    auth_tokens = {
-        str(token).strip()
-        for token in (remote_service_config.get("auth_tokens") or [])
-        if str(token).strip()
-    }
-    rate_limit_per_minute = max(1, int(remote_service_config.get("rate_limit_per_minute", 120) or 120))
-    request_timeout_seconds = max(1.0, float(remote_service_config.get("request_timeout_seconds", 30.0) or 30.0))
-    max_concurrency = max(1, int(remote_service_config.get("max_concurrency", 20) or 20))
-    trust_forwarded_ip = bool(remote_service_config.get("trust_forwarded_ip", False))
-
-    sse_transport = SseServerTransport(message_path)
-    remote_semaphore = asyncio.Semaphore(max_concurrency)
-    request_counters: dict[str, deque[float]] = defaultdict(deque)
-
-    def _client_ip(request: Request) -> str:
-        if trust_forwarded_ip:
-            forwarded_for = request.headers.get("x-forwarded-for", "")
-            if forwarded_for.strip():
-                return forwarded_for.split(",")[0].strip()
-        if request.client and request.client.host:
-            return request.client.host
-        return "unknown"
-
-    def _extract_auth_token(request: Request) -> str:
-        auth_header = request.headers.get("authorization", "").strip()
-        if auth_header.lower().startswith("bearer "):
-            return auth_header[7:].strip()
-        return request.headers.get("x-api-key", "").strip()
-
-    def _authorize_request(request: Request) -> tuple[bool, str]:
-        if not auth_enabled:
-            return True, ""
-        token = _extract_auth_token(request)
-        if token and token in auth_tokens:
-            return True, ""
-        return False, "未通过远程服务鉴权，请提供有效的 Bearer Token 或 X-API-Key。"
-
-    def _allow_request_rate(client_id: str) -> bool:
-        now = time.time()
-        window = request_counters[client_id]
-        while window and now - window[0] >= 60:
-            window.popleft()
-        if len(window) >= rate_limit_per_minute:
-            return False
-        window.append(now)
-        return True
-
-    @asynccontextmanager
-    async def _guard_remote_request(request: Request):
-        request_id = request.headers.get("x-request-id", "").strip() or uuid.uuid4().hex[:16]
-        client_id = _client_ip(request)
-        request.state.request_id = request_id
-        request.state.client_id = client_id
-
-        authorized, message = _authorize_request(request)
-        if not authorized:
-            logger.warning("远程请求鉴权失败 | request_id=%s | client=%s | path=%s", request_id, client_id, request.url.path)
-            yield JSONResponse(
-                {"error": message, "request_id": request_id},
-                status_code=401,
-                headers={"x-request-id": request_id},
-            )
-            return
-
-        if not _allow_request_rate(client_id):
-            logger.warning("远程请求限流触发 | request_id=%s | client=%s | path=%s", request_id, client_id, request.url.path)
-            yield JSONResponse(
-                {"error": "请求过于频繁，请稍后重试。", "request_id": request_id},
-                status_code=429,
-                headers={"x-request-id": request_id},
-            )
-            return
-
-        await remote_semaphore.acquire()
-        started_at = time.perf_counter()
-        try:
-            yield request_id
-        finally:
-            elapsed_ms = (time.perf_counter() - started_at) * 1000
-            remote_semaphore.release()
-            logger.info(
-                "远程请求完成 | request_id=%s | client=%s | path=%s | elapsed_ms=%.2f",
-                request_id,
-                client_id,
-                request.url.path,
-                elapsed_ms,
-            )
-
-    async def _audit_remote_access(request_id: str, client_id: str, path: str, method: str, status: str, error: str | None = None):
-        if dashboard_logger is None:
-            return
-        try:
-            await dashboard_logger.log_remote_access(
-                request_id=request_id,
-                client_id=client_id,
-                path=path,
-                method=method,
-                status=status,
-                error=error,
-            )
-        except Exception as audit_error:
-            logger.warning("远程访问审计日志记录失败: %s", audit_error)
-
-    async def handle_sse(request):
-        async with _guard_remote_request(request) as guard_result:
-            if not isinstance(guard_result, str):
-                return guard_result
-
-            request_id = guard_result
-            try:
-                async with sse_transport.connect_sse(request.scope, request.receive, request._send) as streams:
-                    await _audit_remote_access(request_id, request.state.client_id, request.url.path, request.method, "running")
-                    await app.run(streams[0], streams[1], app.create_initialization_options())
-                await _audit_remote_access(request_id, request.state.client_id, request.url.path, request.method, "success")
-            except Exception as exc:
-                await _audit_remote_access(request_id, request.state.client_id, request.url.path, request.method, "failed", str(exc))
-                raise
-            return PlainTextResponse("MCP SSE 连接已关闭", headers={"x-request-id": request_id})
-
-    async def handle_message(scope: Scope, receive: Receive, send: Send):
-        request = Request(scope, receive)
-        async with _guard_remote_request(request) as guard_result:
-            if not isinstance(guard_result, str):
-                response = guard_result
-                await response(scope, receive, send)
-                return
-
-            request_id = guard_result
-            try:
-                await _audit_remote_access(request_id, request.state.client_id, request.url.path, request.method, "running")
-                await asyncio.wait_for(
-                    sse_transport.handle_post_message(scope, receive, send),
-                    timeout=request_timeout_seconds,
-                )
-                await _audit_remote_access(request_id, request.state.client_id, request.url.path, request.method, "success")
-            except asyncio.TimeoutError:
-                logger.warning("MCP 消息请求超时 | request_id=%s | path=%s", request_id, request.url.path)
-                await _audit_remote_access(request_id, request.state.client_id, request.url.path, request.method, "failed", "timeout")
-                response = JSONResponse(
-                    {"error": "远程请求处理超时。", "request_id": request_id},
-                    status_code=504,
-                    headers={"x-request-id": request_id},
-                )
-                await response(scope, receive, send)
-            except Exception as exc:
-                await _audit_remote_access(request_id, request.state.client_id, request.url.path, request.method, "failed", str(exc))
-                raise
+    mount_path = _derive_fastmcp_mount_path(sse_path, message_path)
 
     async def remote_runtime(request: Request):
         service_info = _build_service_info(config)
-        service_info["remote_runtime"] = {
-            "request_id": request.headers.get("x-request-id", "").strip() or uuid.uuid4().hex[:16],
-            "client_id": _client_ip(request),
-            "active_requests": max_concurrency - remote_semaphore._value,
-            "rate_limit_per_minute": rate_limit_per_minute,
-            "request_timeout_seconds": request_timeout_seconds,
-            "auth_enabled": auth_enabled,
-        }
+        service_info["remote_runtime"] = {"transport_backend": "fastmcp_sse"}
         return JSONResponse(service_info)
 
+    @asynccontextmanager
+    async def lifespan(_starlette_app):
+        async with app.session_manager.run():
+            yield
+
     mcp_http_app = Starlette(
+        lifespan=lifespan,
         routes=[
-            Route(sse_path, endpoint=handle_sse),
             Route("/runtime", endpoint=remote_runtime),
-            Mount(message_path, app=handle_message),
+            Mount(mount_path, app=app.sse_app(mount_path)),
         ]
     )
 
