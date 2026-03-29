@@ -267,17 +267,20 @@ def _run_startup_preflight(config: dict):
 
 def _start_dashboard(
     config,
-    dashboard_logger,
     vector_store,
-    registry_store=None,
     embedder=None,
     feishu_doc_manager=None,
 ):
     """在后台线程中启动 Dashboard Web 服务"""
     import uvicorn
     from dashboard.app import create_dashboard_app
+    from dashboard.logger import DashboardLogger
+    from dashboard.registry import SkillRegistryStore
 
     dashboard_config = config["dashboard"]
+    dashboard_database_url = dashboard_config.get("database_url", "")
+    dashboard_logger = DashboardLogger(dashboard_database_url)
+    registry_store = SkillRegistryStore(dashboard_logger)
     dashboard_app = create_dashboard_app(
         dashboard_logger,
         vector_store,
@@ -464,8 +467,11 @@ def main():
         from dashboard.logger import DashboardLogger
         from dashboard.registry import SkillRegistryStore
 
+        init_logger = DashboardLogger(dashboard_database_url)
+        asyncio.run(init_logger.init_db())
+        asyncio.run(init_logger.dispose())
+
         dashboard_logger = DashboardLogger(dashboard_database_url)
-        asyncio.run(dashboard_logger.init_db())
         registry_store = SkillRegistryStore(dashboard_logger)
         config["_dashboard_logger"] = dashboard_logger
         logger.info("✅ Dashboard 数据库与注册表初始化成功")
@@ -546,9 +552,7 @@ def main():
         try:
             _start_dashboard(
                 config,
-                dashboard_logger,
                 vector_store,
-                registry_store,
                 embedder,
                 feishu_doc_manager,
             )

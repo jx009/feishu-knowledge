@@ -98,7 +98,7 @@ def create_dashboard_app(
         errors = []
 
         try:
-            await dashboard_logger.init_db()
+            await dashboard_logger.healthcheck()
             dependencies["dashboard_database"] = {"status": "healthy"}
         except Exception as exc:
             dependencies["dashboard_database"] = {

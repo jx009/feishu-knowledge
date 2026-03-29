@@ -9,6 +9,7 @@ import json
 import logging
 from typing import List, Optional
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -49,6 +50,13 @@ class DashboardLogger:
         async with self.engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         logger.info("Dashboard 数据库初始化完成")
+
+    async def healthcheck(self):
+        async with self.engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+
+    async def dispose(self):
+        await self.engine.dispose()
 
     async def log_save(
         self,
