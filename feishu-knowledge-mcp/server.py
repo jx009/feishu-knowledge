@@ -21,6 +21,7 @@
     MCP_PORT               - 远程 MCP 服务监听端口
 """
 
+import asyncio
 import logging
 import socket
 import sys
